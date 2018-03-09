@@ -1,3 +1,173 @@
+# Homework#15 Buzan Kirill
+#### 1. Установка docker-machine
+```bash
+curl -L https://github.com/docker/machine/releases/download/v0.13.0/docker-machine-`uname -s`-`uname -m` >/tmp/docker-machine && \
+> sudo install /tmp/docker-machine /usr/local/bin/docker-machine
+```
+Проверяем установленную версию:
+```bash
+docker-machine version
+
+docker-machine version 0.13.0, build 9ba6da9
+```
+
+#### 2. Новый проект Docker в GCE
+Создано новый проект Docker в GCE. Произведена настройка и подключения gcloud к проекту Docker
+
+#### 3. Создаем интанс в GCE с помощью docker-machine
+```bash
+docker-machine create --driver google \
+--google-project docker-myid \
+--google-zone europe-west1-b \
+--google-machine-type g1-small \
+--google-machine-image $(gcloud compute images list --filter ubuntu-1604-lts --uri) \
+docker-host
+```
+В результате будет создан инстанс в GCE.
+Проверим, что он создан успешно:
+```bash
+docker-machine ls
+
+NAME          ACTIVE   DRIVER   STATE     URL                         SWARM   DOCKER        ERRORS
+docker-host   -        google   Running   tcp://35.189.195.131:2376           v18.02.0-ce  
+```
+Мы видим что инстанс запущен, но в колонке active, мы видим - , это значит что переменные окружения не настроены. 
+Для настройки переменных окружений в автоматическом режиме выполним команду:
+```bash
+#Посмотрим переменные окружения, необходимые для работы с docker хостом:
+[kirill@localhost 15_docker_2]$ docker-machine env docker-host
+export DOCKER_TLS_VERIFY="1"
+export DOCKER_HOST="tcp://35.189.195.131:2376"
+export DOCKER_CERT_PATH="/home/kirill/.docker/machine/machines/docker-host"
+export DOCKER_MACHINE_NAME="docker-host"
+# Run this command to configure your shell: 
+# eval $(docker-machine env docker-host)
+
+# Выполним команду для применения переменных, укаазнных выше, в текущем окрудении клиента
+[kirill@localhost 15_docker_2]$ eval $(docker-machine env docker-host)
+
+```
+Повторим команду docker-machine ls:
+```bash
+[kirill@localhost 15_docker_2]$ docker-machine ls
+NAME          ACTIVE   DRIVER   STATE     URL                         SWARM   DOCKER        ERRORS
+docker-host   *        google   Running   tcp://35.189.195.131:2376           v18.02.0-ce   
+```
+В столбце active появилась * это значит, данный dcoker host в настоящий момент активен и при запуске утидиты dcoker все ее команды будут выполняться на этом хосте.
+
+#### 4. Namespaces
+Запуск контейнера (tehbilly/htop) используя изоляцию - свое пространство имен. Видны только процессы внутри контейнера. Главный процесс PID=1.
+```bash
+docker run --rm -ti tehbilly/htop
+```
+Запуск контейнера (tehbilly/htop). При это контейнер делит пространство имен порцессов на хосте, где он запущен. Таким образом позволяя процессам внутри контейнер видеть процессы в системе. 
+```bash
+docker run --rm --pid host -ti tehbilly/htop
+```
+
+#### 5. Создание образа с приложением reddit на основе ubuntu 16.04
+1. Созданы файлы, необходимые для работы приложения и конфигурации mongo.
+db_config - задается переменная окружения DATABASE_URL
+mongod.conf - конфигурационный файл для Mongo
+start.sh - скрипт для запуска приложения reddit
+Dockerfile - файл для сборки docker образа
+2. Сборка образа. 
+```bash
+docker build -t reddit:latest .
+
+Successfully built 760f90752dcf
+Successfully tagged reddit:latest
+```
+Указываем тег при создании образа. Теги полезны, так как не маркированные тегами образы будут попадать в список подвешенных образов. Это слои, которые не имеют связей с другими маркированными образами.
+Узнать список подвешенных образов можно командой:
+```bash
+docker images -f dangling=true
+```
+3. Вывод списка доступных образов
+```bash
+docker images -a
+
+[kirill@localhost 15_docker_2]$ docker images -a
+REPOSITORY          TAG                 IMAGE ID            CREATED             SIZE
+reddit              latest              760f90752dcf        9 minutes ago       682MB
+<none>              <none>              fa12b1150ff7        9 minutes ago       682MB
+...
+...
+ubuntu              16.04               0458a4468cbc        3 weeks ago         112MB
+tehbilly/htop       latest              692db5793206        5 weeks ago         6.85MB
+```
+#### 6. Запуск docker контейнера
+1. Запуск произведем командой:
+```bash
+docker run --name reddit -d --network=host reddit:latest
+
+4074399af177afd2a1fe8a049ad6890a82a43800a86889248258fc4809e4fe1d
+```
+*--name reddit* задает имя контейнера. Можно выполнять работа с контейнером используя его имя, а не container_id. Если имя не задать, docker сам сгенерирует время
+*-d* запуск контейнера в автономном режиме (открепит терминал)
+*--network=host* контейнер будет использовать сетевой стек хоста. 
+*reddit:latest* в конце задано имя образа и тег на осонове которого будет запущен контейнер.
+2. Проверяем, что конейнер запущен
+```bash
+docker ps
+
+CONTAINER ID        IMAGE               COMMAND             CREATED              STATUS              PORTS               NAMES
+4074399af177        reddit:latest       "/start.sh"         About a minute ago   Up About a minute   
+```
+
+#### 7. Настройка firewall
+Без разрешения входящего TCP-трафика на порт 9292 нет возможности использовать web-приложение.
+Разрешим входящий TCP-трафик.
+```bash
+gcloud compute firewall-rules create reddit-app \
+--allow tcp:9292 --priority=65534 \
+--target-tags=docker-machine \
+--description="Allow TCP connections" \
+--direction=INGRESS
+
+Creating firewall...done.                                                                                                                   
+NAME        NETWORK  DIRECTION  PRIORITY  ALLOW     DENY
+reddit-app  default  INGRESS    65534     tcp:9292
+```
+В консоли GCE в правилах брандмауэра добавилось новое правиль reddit-app
+
+После создания правила, web-приложение успешно заработало.
+
+#### 8. Docker Hub
+1. Произвел регистрацию на docker hub
+2. Осуществил подклювчение к docker hub в консоли:
+```bash
+docker login
+
+Login Succeeded
+```
+3. Производим загрузку образа на docker hub:
+```bash
+docker tag reddit:latest dockerbuzankirill/otus-reddit:1.0
+docker push dockerbuzankirill/otus-reddit:1.0
+
+The push refers to repository [docker.io/dockerbuzankirill/otus-reddit]
+c81510f35bf3: Pushed 
+f16c607d4b69: Pushed 
+cc7ec20b9272: Pushed 
+9ea6e05198e2: Pushed 
+9cbee2a4dce8: Pushed 
+1ad4dbbc42ab: Pushed 
+256a0e97f2da: Pushed 
+34b2d7663eeb: Pushed 
+b770752480de: Pushed 
+6f4ce6b88849: Mounted from library/ubuntu 
+92914665e7f6: Mounted from library/ubuntu 
+c98ef191df4b: Mounted from library/ubuntu 
+9c7183e0ea88: Mounted from library/ubuntu 
+ff986b10a018: Mounted from library/ubuntu 
+1.0: digest: sha256:3ef2444594c99d1ef6b649200bd2bb648b51f68876306fd5c0851bbd604f2e88 size: 3241
+```
+Образ успешно загружен на docker hub:
+https://hub.docker.com/r/dockerbuzankirill/otus-reddit/tags/
+Во вкладке tags прописано имя тега 1.0, то что мы указали после названия репозитория.
+
+
 # Homework#14 Buzan Kirill
 #### 1. Установка Docker. Centos 7
 Ссылка на инструкцию:
