@@ -112,18 +112,73 @@ docker build -t dockerbuzankirill/ui:1.0 ./ui
 docker network create reddit
 ```
 Создали bridge-сеть для контейнеров, так как сетевые алиасы не работают в сети по умолчанию.
-2) Запустим контейнеры в созданные сети. Конмады для запуска контейнеров:
+
+2) Запустим контейнеры в созданные сети с алиасами к контейнерам. Команды для запуска контейнеров:
 ```bash
-#Mongo
+# Mongo
 docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db mongo:latest
-#Сервис post-py
+# Сервис post-py
 docker run -d --network=reddit --network-alias=post dockerbuzankirill/post:1.0
-#Сервис comment
+# Сервис comment
 docker run -d --network=reddit --network-alias=comment dockerbuzankirill/comment:1.0
-#Сервис UI
+# Сервис UI
 docker run -d --network=reddit -p 9292:9292 dockerbuzankirill/ui:1.0
 ```
+#### 5. Задание со звездочкой
+Конмады для запусков контейнеров с новыми сетевыми алиасами. Переменные окружения задаются в команде:
+```bash
+# Mongo
+docker run -d --network=reddit --network-alias=post_db_mydocker --network-alias=comment_db_mydocker mongo:latest
+# Сервис post-py
+docker run -d --network=reddit --network-alias=post_mydocker -e POST_DATABASE_HOST=post_db_mydocker dockerbuzankirill/post:1.0
+# Сервис commen
+docker run -d --network=reddit --network-alias=comment_mydocker -e COMMENT_DATABASE_HOST=comment_db_mydocker dockerbuzankirill/comment:1.0
+# Сервис UI
+docker run -d --network=reddit -p 9292:9292 -e POST_SERVICE_HOST=post_mydocker -e COMMENT_SERVICE_HOST=comment_mydocker dockerbuzankirill/ui:1.0
+```
+#### 6. Улучшение образа UI
+Собран образ на базе Ubuntu - версия 2. Так же применены все рекомендации linter. Образ на основе ruby переименрован в Dockerfile_ruby. 
+Результат:
+```bush
+[kirill@localhost reddit-microservices]$ docker images
+REPOSITORY                  TAG                 IMAGE ID            CREATED             SIZE
+dockerbuzankirill/ui        2.0                 6e4896f7e84d        21 seconds ago      394MB
+dockerbuzankirill/ui        1.0                 93c6eb4456a2        45 minutes ago      768MB
+```
+Образ уменьшился почти в 2 раза - 48,7%
+#### 7. Задание со звездочкой. Образ на основе Alpine Linux
+Собран образ на базе Apline Linix - версия 3. Так же применены все рекомендации linter. Образ на основе Ubuntu переименрован в Dockerfile_ubuntu. 
+Результат:
+```bush
+REPOSITORY                  TAG                 IMAGE ID            CREATED              SIZE
+dockerbuzankirill/ui        3.0                 7b1aa2e62c77        About a minute ago   207MB
+dockerbuzankirill/ui        2.0                 6e4896f7e84d        2 hours ago          394MB
+dockerbuzankirill/ui        1.0                 93c6eb4456a2        2 hours ago          768MB
+```
+Образ уменьшился по сравнение с версией 1 в 3.5 раза - 73%. По сравнение с версией 2 почти в 2 раза - 47,5%
+Применение рекомендация linter ведет к снижению замнаиемого образа, так как чистится кеш. 
 
+Можно сделать вывод, что основополагающим способом по уменьшению образа является использование минимального базового образа. Так же необходимо устанавливать в контейнер только необходимые пакеты и утилиты. 
+Рекомендации от linter позволяют сделать вывод, что удаление временных файлов, кешей и другого мусора так же позволяют уменьшить образ.
+Уменьшение количества слоев так же ведет к меньшению образа.
+
+#### 8. Docker Volume
+1) Создадим docker volume
+```bas
+docker volume create reddit_db
+```
+2) Запустим контейнеры, используя volume
+```bash
+# Mongo
+docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db -v reddit_db:/data/db mongo:latest
+# Сервис post-py
+docker run -d --network=reddit --network-alias=post dockerbuzankirill/post:1.0
+# Сервис comment
+docker run -d --network=reddit --network-alias=comment dockerbuzankirill/comment:1.0
+# Сервис UI
+docker run -d --network=reddit -p 9292:9292 dockerbuzankirill/ui:2.0
+```
+Запуск контейнеров с volume позволило удалять и запускать контейнер без потери данных в базе данных. 
 
 # Homework#15 Buzan Kirill
 #### 1. Установка docker-machine
