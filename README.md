@@ -42,12 +42,12 @@ COPY Gemfile* $APP_HOME/
 RUN bundle install
 COPY . $APP_HOME
 
-ENV COMMENT_DATABASE_HOST=comment_db \
-    COMMENT_DATABASE=comments
+ENV COMMENT_DATABASE_HOST=comment_db
+ENV COMMENT_DATABASE=comments
 
 CMD ["puma"]
 ```
-Заменено использование ADD на COPY. ENV записано в одну строку. Онлайн linter предложил удалять кеш rm -rf /var/lib/apt/lists/* и использовать конструкцию --no-install-recommends.
+Заменено использование ADD на COPY. Онлайн linter предложил удалять кеш rm -rf /var/lib/apt/lists/* и использовать конструкцию --no-install-recommends.
 Эти изменения повелкли к изменению размера образа на 10 МБ.
 Без рекомендаций linter:
 ```bash
@@ -74,13 +74,13 @@ COPY Gemfile* $APP_HOME/
 
 RUN bundle install
 COPY . $APP_HOME
-ENV POST_SERVICE_HOST=post \
-    POST_SERVICE_PORT=5000 \
-    COMMENT_SERVICE_HOST=comment \
-    COMMENT_SERVICE_PORT=9292
+ENV POST_SERVICE_HOST=post
+ENV POST_SERVICE_PORT=5000
+ENV COMMENT_SERVICE_HOST=comment
+ENV COMMENT_SERVICE_PORT=9292
 CMD ["puma"]
 ```
-Заменено использование ADD на COPY. ENV записано в одну строку. Онлайн linter предложил удалять кеш rm -rf /var/lib/apt/lists/* и использовать конструкцию --no-install-recommends.
+Заменено использование ADD на COPY. Онлайн linter предложил удалять кеш rm -rf /var/lib/apt/lists/* и использовать конструкцию --no-install-recommends.
 Эти изменения повелкли к изменению размера образа на 11 МБ.
 Без рекомендаций linter:
 ```bash
