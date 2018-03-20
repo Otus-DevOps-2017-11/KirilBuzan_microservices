@@ -1,3 +1,280 @@
+# Homework#17 Buzan Kirill
+#### 1. Network driver
+Запустим контейнеры с различными драйверами:
+```bash
+docker run --network none --rm -d --name net_test joffotron/docker-net-tools -c "sleep 100
+docker run --network host --rm -d --name net_test joffotron/docker-net-tools -c "sleep 100"
+```
+Сравним вывод команд:
+```bash
+docker exec -ti net_test ifconfig
+docker-machine ssh docker-host ifconfig
+```
+Вывод команд одинаковый, так как контейнер запущен в сетевом пространстве хоста. Если запустить docker контейнер в сетевом пространстве, например reddit, то вывод команд будт разным. Контейнеру будут доступны только интерфейсы определенные для reddit - eth0 и lo.
+
+Попробууем запустить конейтнер несколько раз (2-4 раза):
+```bash
+docker run --network host -d nginx
+```
+nginx использует порт 80. Поэтому первый запуск контейнера успешен, последующие запуски контейнера "падают", так как порт 80 уже занят. 
+
+#### 2. Docker networks
+Запустим контейнеры из пункта 1 с различными драйверами и посомтрим какие создаются namespace
+Если контейнер запускаем с драйвером host, то новый namespace не созлается, используется namespace default
+```bash
+gcp_buzan@docker-host:/$ sudo ip netns
+default
+```
+
+Если используется драйвер none (или другой отличный от host), то создается новый namespace.
+```bash
+gcp_buzan@docker-host:/$ sudo ip netns
+75b4d1bb285c
+default
+```
+
+#### 3. Bridge network driver
+запустим проект в 2-х bridge сетях. Так , чтобы сервис ui не имел доступа к базе данных.
+Создадим docker-сети
+```bash
+docker network create back_net —subnet=10.0.2.0/24
+docker network create front_net --subnet=10.0.1.0/24
+```
+Запустим docker-контенеры в созданных сетях:
+```bash
+# Сервис UI
+docker run -d --network=front_net -p 9292:9292 dockerbuzankirill/ui:1.0
+# Сервис comment
+docker run -d --network=back_net --name comment dockerbuzankirill/comment:1.0
+rill/ui:1.0
+# Сервис post-py
+docker run -d --network=back_net --name post dockerbuzankirill/post:1.0
+# Mongo
+docker run -d --network=back_net --name mongo_db --network-alias=post_db --network-alias=comment_db mongo:latest
+```
+Для работы приложения, необходимо чтобы контейнеры comment и post находились помимо сети back_net еще и в post_end:
+```bash
+docker network connect front_net post
+docker network connect front_net comment
+```
+После включения контейнеров во вторую подсеть, приложение работает штатно.
+
+осмотрим как выглядит сетевой стек Linux в текущий момент.
+Для этого проивзодим установку на host:
+```bash
+sudo apt-get update && sudo apt-get install bridge-utils
+```
+Найдем все bridge-интерфейсы для каждой из сетей:
+```bash
+docker-user@docker-host:~$ ifconfig | grep br
+br-5502d6e485a8 Link encap:Ethernet  HWaddr 02:42:2c:5f:61:7a  
+br-8f2629ea7321 Link encap:Ethernet  HWaddr 02:42:f1:68:5b:6f  
+br-cf24cfaf9175 Link encap:Ethernet  HWaddr 02:42:a5:37:44:fe 
+```
+Посмотрим отображаемые veth-интерфейсы:
+```bash
+brctl show br-5502d6e485a8
+1) back_net interface
+br-5502d6e485a8 Link encap:Ethernet  HWaddr 02:42:2c:5f:61:7a  
+          inet addr:10.0.2.1  Bcast:10.0.2.255  Mask:255.255.255.0
+          inet6 addr: fe80::42:2cff:fe5f:617a/64 Scope:Link
+          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
+          RX packets:74 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:243 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0 
+          RX bytes:4772 (4.7 KB)  TX bytes:23450 (23.4 KB)
+
+brctl show br-8f2629ea7321
+2) front_net interface
+br-8f2629ea7321 Link encap:Ethernet  HWaddr 02:42:f1:68:5b:6f  
+          inet addr:10.0.1.1  Bcast:10.0.1.255  Mask:255.255.255.0
+          inet6 addr: fe80::42:f1ff:fe68:5b6f/64 Scope:Link
+          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
+          RX packets:79 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:256 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0 
+          RX bytes:20246 (20.2 KB)  TX bytes:26585 (26.5 KB)
+
+brctl show br-cf24cfaf9175
+br-cf24cfaf9175 Link encap:Ethernet  HWaddr 02:42:a5:37:44:fe  
+          inet addr:172.18.0.1  Bcast:172.18.255.255  Mask:255.255.0.0
+          inet6 addr: fe80::42:a5ff:fe37:44fe/64 Scope:Link
+          UP BROADCAST MULTICAST  MTU:1500  Metric:1
+          RX packets:113 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:159 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:0 
+          RX bytes:39751 (39.7 KB)  TX bytes:33296 (33.2 KB
+```
+
+#### 4. Docker-compose
+Установим docker-compose. 
+```bash
+pip install docker-compose
+```
+Создадим файл docker-compose.yml
+В презентации ссылка не вернка. Правильная ссылка:
+https://github.com/express42/otus-snippets/blob/master/hw-17/docker-compose.yml
+
+Зададим переменную  окружения:
+export USERNAME=dockerbuzankirill
+
+Произведем запуск docker-compose:
+```bash
+docker-compose up -d
+```
+Полчил ошибку:
+```bash
+Creating network "redditmicroservices_front_net" with the default driver
+ERROR: cannot create network 38aa9df8ad74f5a031e5e9ebb178d2479c01bf88e58dbe4d491e619256fcf33d (br-38aa9df8ad74): conflicts with network 8f2629ea73219c84634b6c6e5d48232881518cc73ed39af43e857164dcc439a3 (br-8f2629ea7321): networks have overlapping IPv4
+```
+Посмотрим созданные сети:
+```bash
+docker network ls
+NETWORK ID          NAME                         DRIVER              SCOPE
+5502d6e485a8        back_net                     bridge              local
+a9a0732c9e37        bridge                       bridge              local
+8f2629ea7321        front_net                    bridge              local
+a621d14fafdc        host                         host                local
+f5726317cea5        none                         null                local
+cf24cfaf9175        reddit                       bridge              local
+```
+Удалим конфликтные сети, ориентируясь на ID:
+```bash
+docker network rm back_net
+docker network rm front_net
+```
+Теперь команла отработает корректно.
+Посмотрми текущий список:
+```bash
+docker network ls
+NETWORK ID          NAME                            DRIVER              SCOPE
+a9a0732c9e37        bridge                          bridge              local
+a621d14fafdc        host                            host                local
+f5726317cea5        none                            null                local
+cf24cfaf9175        reddit                          bridge              local
+9c078820374a        redditmicroservices_back_net    bridge              local
+e461abd3ef3c        redditmicroservices_front_net   bridge              local
+```
+Как видим появились две новые сети:
+redditmicroservices_back_net
+redditmicroservices_front_net 
+
+После запуска docker-compose приложение работает штатно.
+
+Изменим файл docker-compose.yml в сотвветствии с заданием:
+1) Изменить docker-compose под кейс с множеством сетей, сетевых алиасов.
+2) Параметризуйте с помощью переменных окружений:
+• порт публикации сервиса ui
+• версии сервисов
+• возможно что-либо еще на ваше усмотрение
+
+1) В файл добавил блок:
+```yml
+...
+networks:
+  back_net:
+    ipam:
+      config:
+      # default network back_net 10.0.2.0/24
+      - subnet: ${BACK_NET_IP}
+  front_net:
+    ipam:
+      config:
+      # default network front_net 10.0.1.0/24
+      - subnet: ${FRONT_NET_IP}
+```
+добавил соответствующие сети для сервисов.
+
+2) Параметезировал:
+Порт публикации UI
+```yml
+- ${UI_PORT}:${UI_PORT}/tcp
+```
+Версии сервисов:
+```yml
+...
+image: mongo:${MONGO_V}
+...
+image: ${USERNAME}/ui:${UI_V}
+...
+image: ${USERNAME}/post:${POST_V}
+...
+image: ${USERNAME}/comment:${COMMENT_V}
+...
+```
+в файле комментариями указаны default значения
+Дополнительно сделал параметризацию сетей
+```yml
+...
+- subnet: ${BACK_NET_IP}
+...
+- subnet: ${FRONT_NET_IP}
+```
+
+3) Параметризованные параметры запишите в отдельный файл c расширением .env
+4) Без использования команд source и export
+docker-compose должен подхватить переменные из этого файла. Проверьте.
+
+Ссылка на документацию docker:
+https://docs.docker.com/compose/compose-file/#env_file
+Файл должен иметь имя и расширение:
+.env
+в таком случае docker-compose его подхватит автоматически.
+содержимое файла .env
+```text
+USERNAME=dockerbuzankirill
+MONGO_V=3.2
+UI_V=1.0
+UI_PORT=9292
+POST_V=1.0
+COMMENT_V=1.0
+BACK_NET_IP=10.0.2.0/24
+FRONT_NET_IP=10.0.1.0/24
+```
+
+Как образуется базовое имя проекта. Можно ли его задать? Если можно то как?
+Описание в документации docker:
+https://docs.docker.com/compose/reference/envvars/
+Можно задать с помощью тега -p или с помощью переменной окружения: COMPOSE_PROJECT_NAME
+
+Пример:
+До:
+```bash
+docker ps
+CONTAINER ID        IMAGE                           COMMAND                  CREATED             STATUS              PORTS                    NAMES
+e5087b6ca082        dockerbuzankirill/comment:1.0   "puma"                   40 minutes ago      Up 30 minutes                                redditmicroservices_comment_1docker ps
+CONTAINER ID        IMAGE                           COMMAND                  CREATED             STATUS              PORTS                    NAMES
+f4460f733725        dockerbuzankirill/ui:1.0        "puma"                   8 seconds ago       Up 5 seconds        0.0.0.0:9292->9292/tcp   otusms_ui_1
+95982156bf72        dockerbuzankirill/comment:1.0   "puma"                   8 seconds ago       Up 6 seconds                                 otusms_comment_1
+d01264309f23        mongo:3.2                       "docker-entrypoint.s…"   8 seconds ago       Up 6 seconds        27017/tcp                otusms_post_db_1
+e8de7d48e10a        dockerbuzankirill/post:1.0      "python3 post_app.py"    8 seconds ago       Up 6 seconds                                 otusms_post_1
+[kirill@localhost reddit-microservices]$ 
+
+9a8c7f258d56        dockerbuzankirill/ui:1.0        "puma"                   40 minutes ago      Up 30 minutes       0.0.0.0:9292->9292/tcp   redditmicroservices_ui_1
+e1dadd55710c        dockerbuzankirill/post:1.0      "python3 post_app.py"    40 minutes ago      Up 30 minutes                                redditmicroservices_post_1
+ca140225cc48        mongo:3.2                       "docker-entrypoint.s…"   40 minutes ago      Up 30 minutes       27017/tcp                redditmicroservices_post_db_1
+```
+Выполним переопределение имени:
+```bash
+docker-compose -p OtusMS up -d
+```
+Проверим:
+```bash
+docker ps
+CONTAINER ID        IMAGE                           COMMAND                  CREATED             STATUS              PORTS                    NAMES
+f4460f733725        dockerbuzankirill/ui:1.0        "puma"                   8 seconds ago       Up 5 seconds        0.0.0.0:9292->9292/tcp   otusms_ui_1
+95982156bf72        dockerbuzankirill/comment:1.0   "puma"                   8 seconds ago       Up 6 seconds                                 otusms_comment_1
+d01264309f23        mongo:3.2                       "docker-entrypoint.s…"   8 seconds ago       Up 6 seconds        27017/tcp                otusms_post_db_1
+e8de7d48e10a        dockerbuzankirill/post:1.0      "python3 post_app.py"    8 seconds ago       Up 6 seconds                                 otusms_post_1
+```
+#### 5. Docker-compose override
+Создан файл: docker-compose.override.yml
+Для возможности изменения кода каждого из приложений, не выполняя сборку образа, необходимо использовать volumes.
+
+Для проверки, был удален host и создан заново. 
+Далее выполнил команду, что использовать docker-compose.yml и docker-compose.override.yml использовал тег -f для явного указания файлов:
+docker-compose -f docker-compose.yml -f docker-compose.override.yml up -d
+
 # Homework#16 Buzan Kirill
 #### 1. Новая структура приложения
 1) Все файлы предыдущих домашних заданий (14 и 15) перенесены в каталог monolith
