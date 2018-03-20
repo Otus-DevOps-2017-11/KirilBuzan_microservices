@@ -1,0 +1,15 @@
+version: '3.3'
+services:
+  ui:
+    command: ["puma", "--debug", "-w", "2"]
+    volumes:
+      - /apps/ui:/puma
+  post:
+    volumes:
+      - /apps/post-py:/puma
+  comment:
+    command: ["puma", "--debug", "-w", "2"]
+    volumes:
+      - /apps/comment:/puma
+volumes:
+  apps:
