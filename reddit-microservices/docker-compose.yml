@@ -1,0 +1,47 @@
+version: '3.3'
+services:
+  post_db:
+    # default version 3.2
+    image: mongo:${MONGO_V}
+    volumes:
+      - post_db:/data/db
+    networks:
+      - back_net
+  ui:
+    build: ./ui
+    # default version 1.0
+    image: ${USERNAME}/ui:${UI_V}
+    ports:
+      # default port 9292
+      - ${UI_PORT}:${UI_PORT}/tcp
+    networks:
+      - front_net
+  post:
+    build: ./post-py
+    # default version 1.0
+    image: ${USERNAME}/post:${POST_V}
+    networks:
+      - back_net
+      - front_net
+  comment:
+    build: ./comment
+    # default version 1.0
+    image: ${USERNAME}/comment:${COMMENT_V}
+    networks:
+      - back_net
+      - front_net
+
+volumes:
+  post_db:
+
+networks:
+  back_net:
+    ipam:
+      config:
+      # default network back_net 10.0.2.0/24
+      - subnet: ${BACK_NET_IP}
+  front_net:
+    ipam:
+      config:
+      # default network front_net 10.0.1.0/24
+      - subnet: ${FRONT_NET_IP}
