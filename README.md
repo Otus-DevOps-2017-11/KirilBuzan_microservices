@@ -1,3 +1,172 @@
+# Homework#19 Buzan Kirill
+#### 1. Создаем виртуальную машину
+Создадим виртуальную машину с помощью docker-machine 
+
+```bash
+docker-machine create --driver google \
+--google-project docker-myid \
+--google-zone europe-west1-b \
+--google-machine-type n1-standard-1 \
+--google-disk-size 100 \
+--google-disk-type pd-standard \
+--google-tags http-server,https-server \
+--google-allow 80,443 \
+--google-machine-image $(gcloud compute images list --filter ubuntu-1604-lts --uri) \
+gitlab-ci
+```
+
+docker поставится автомтаически
+docker-compose доустанавливал
+```bash
+sudo atp-get install docker-compose
+```
+
+#### 2. Подготовка окружения
+Сосздадим необходимые каталоги и файлы
+```bash
+mkdir -p /srv/gitlab/config /srv/gitlab/data /srv/gitlab/logs
+cd /srv/gitlab/
+touch docker-compose.yml
+```
+
+Отредактируем файл docker-compose.yml
+```yml
+web:
+  image: 'gitlab/gitlab-ce:latest'
+  restart: always
+  hostname: 'gitlab.example.com'
+  environment:
+    GITLAB_OMNIBUS_CONFIG: |
+      external_url 'http://35.195.30.185'
+  ports:
+    - '80:80'
+    - '443:443'
+    - '2222:22'
+  volumes:
+    - '/srv/gitlab/config:/etc/gitlab'
+    - '/srv/gitlab/logs:/var/log/gitlab'
+    - '/srv/gitlab/data:/var/opt/gitlab'
+```
+
+#### 3. Запуск GitLab CI
+Запустим контейнер и произведет первичную настройку
+```bash
+docker-compose up -d
+```
+Произвел настройку GitLab в соответствии с домашним заданием.
+
+#### 4. Копирование репозитория из GitHub в GitLab
+
+```bash
+# Клонируем репозиторий из github
+git clone https://github.com/Otus-DevOps-2017-11/KirilBuzan_microservices.git
+# Переходим на ветку docker-6
+git checkout -b docker-6
+# Подлючаем удаленный репоиторий gitlab
+git remote add gitlab http://35.195.30.185/homework/example.git
+# Пушим все изменения в удаленный репозиторий gitlab
+git push gitlab docker-6
+```
+После этого в gitlab был скопирован репозиторий из github 
+
+#### 5. CI/CD Pipeline
+Создадим файл с описанием pipeline:
+```bash
+touch .gitlab-ci.yml
+```
+
+Заполнили файл:
+```yml
+stages:
+  - build
+  - test
+  - deploy
+
+build_job:
+  stage: build
+  script:
+    - echo 'Building'
+
+test_unit_job:
+  stage: test
+  script:
+    - echo 'Testing 1'
+
+test_integration_job:
+  stage: test
+  script:
+    - echo 'Testing 2'
+
+deploy_job:
+  stage: deploy
+  script:
+    - echo 'Deploy'
+```
+
+Добавляем файл в git 
+```bash
+git add .gitlab-ci.yml
+```
+
+применяем изменения:
+```bash
+git commit -m 'add pipeline definition'
+```
+
+применяем изменения в gitlab
+```bash
+git push gitlab docker-6
+```
+
+Процесс pipelines находится в статусе pending, так как не создан ни один runner
+
+#### 6. Runner
+Создадим и запустим runner:
+```bash
+sudo docker run -d --name gitlab-runner --restart always \
+-v /srv/gitlab-runner/config:/etc/gitlab-runner \
+-v /var/run/docker.sock:/var/run/docker.sock \
+gitlab/gitlab-runner:latest
+```
+После запуска Runner нужно зарегистрировать:
+```bash
+docker-user@gitlab-ci:~$ sudo docker exec -it gitlab-runner gitlab-runner register
+Running in system-mode.                            
+                                                   
+Please enter the gitlab-ci coordinator URL (e.g. https://gitlab.com/):
+http://35.195.30.185                 
+Please enter the gitlab-ci token for this runner:
+token
+Please enter the gitlab-ci description for this runner:
+[a3dcada94a96]: my-runner
+Please enter the gitlab-ci tags for this runner (comma separated):
+linux,xenial,ubuntu,docker
+Whether to run untagged builds [true/false]:
+[false]: true
+Whether to lock the Runner to current project [true/false]:
+[true]: false
+Registering runner... succeeded                     runner=aYix8c4_
+Please enter the executor: shell, docker+machine, virtualbox, docker-ssh+machine, kubernetes, docker, docker-ssh, parallels, ssh:
+docker
+Please enter the default Docker image (e.g. ruby:2.1):
+alpine:latest
+Runner registered successfully. Feel free to start it, but if it's running already the config should be automatically reloaded! 
+```
+После регистрации runner, запустился pipeline. Он заввершился успешно.
+
+#### 7. Тестирование в pipeline прилоежния reddit
+Загрузим прилоежние в репозиторий gitlab:
+```bash
+git clone https://github.com/express42/reddit.git && rm -rf ./reddit/.git
+git add reddit/
+git commit -m “Add reddit app”
+git push gitlab docker-6
+```
+
+Внесем изменения в файл .gitlab-ci.yml и reddit/Gemfile, создадим файл reddit/simpletest.rb для возможности тестирования приложения reddit в pipeline.
+
+Тестирование запустилось автоматически после внесения изменения. Тестирование завершилось успехом.
+
 # Homework#17 Buzan Kirill
 #### 1. Network driver
 Запустим контейнеры с различными драйверами:
